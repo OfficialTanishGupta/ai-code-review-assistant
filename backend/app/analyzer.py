@@ -2,55 +2,74 @@ import subprocess
 import tempfile
 import json
 import requests
+import re
 
 
+# =====================================================
+# AI EXPLANATION + IMPROVED CODE GENERATION
+# =====================================================
 def get_ai_explanation(code: str, issues: list):
+
     prompt = f"""
-You are a senior software engineer.
+You are an expert senior software engineer.
 
 Review the following Python code and detected issues.
 
-Code:
+CODE:
 {code}
 
-Issues:
+ISSUES:
 {issues}
 
-Explain:
-1. What is wrong
-2. Why it matters
-3. How to improve it
+Provide:
 
-Be clear and beginner friendly.
+1. Clear explanation of problems
+2. Why they matter
+3. A FULLY improved version of the code following best practices
+
+Return STRICTLY in this format:
+
+EXPLANATION:
+...
+
+IMPROVED_CODE:
+# improved code here
 """
 
     try:
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={
-                "model": "deepseek-coder:6.7b",
+                "model": "phi",
                 "prompt": prompt,
                 "stream": False
-            }
+            },
+            timeout=120
         )
 
-        return response.json()["response"]
+        return response.json().get("response", "")
 
     except Exception as e:
         return f"AI explanation failed: {str(e)}"
 
 
+# =====================================================
+# MAIN ANALYSIS FUNCTION
+# =====================================================
 def analyze_code(code: str):
+
+    # Create temporary file for pylint
     with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp:
         temp.write(code.encode())
         temp.flush()
+        temp_file = temp.name
 
-        # Use JSON output from pylint
-        result = subprocess.run(
-            ["pylint", temp.name, "-f", "json"],
-            capture_output=True,
-            text=True
-        )
+    # ---------- Run pylint in JSON mode ----------
+    result = subprocess.run(
+        ["pylint", temp_file, "-f", "json"],
+        capture_output=True,
+        text=True
+    )
 
     try:
         pylint_output = json.loads(result.stdout)
@@ -66,19 +85,20 @@ def analyze_code(code: str):
             "message": item.get("message")
         })
 
-    # Calculate score separately
+    # ---------- Extract pylint score ----------
     score_result = subprocess.run(
-        ["pylint", temp.name],
+        ["pylint", temp_file],
         capture_output=True,
         text=True
     )
 
     score = None
-    import re
-    match = re.search(r"rated at ([\d\.]+)/10", score_result.stdout)
+    match = re.search(r"rated at ([\\d\\.]+)/10", score_result.stdout)
+
     if match:
         score = float(match.group(1))
 
+    # ---------- AI explanation + improved code ----------
     ai_explanation = get_ai_explanation(code, issues)
 
     return {
